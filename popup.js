@@ -128,15 +128,25 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
+    // 对搜索词进行处理，移除正则表达式特殊字符的转义
+    const searchQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
     chrome.bookmarks.search(query, function(results) {
+      // 使用自定义过滤，支持特殊字符
+      const filteredResults = results.filter(item => {
+        const title = item.title.toLowerCase();
+        const searchLower = query.toLowerCase();
+        return title.includes(searchLower);
+      });
+
       if (includeFolders) {
         // 包含文件夹的搜索结果
-        const folderResults = results.filter(item => !item.url);
-        const bookmarkResults = results.filter(item => item.url);
+        const folderResults = filteredResults.filter(item => !item.url);
+        const bookmarkResults = filteredResults.filter(item => item.url);
         displayMixedResults(folderResults, bookmarkResults);
       } else {
         // 原有的纯书签搜索
-        const bookmarkResults = results.filter(item => item.url);
+        const bookmarkResults = filteredResults.filter(item => item.url);
         displayBookmarks(bookmarkResults);
       }
     });
