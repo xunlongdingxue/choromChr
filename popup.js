@@ -167,12 +167,13 @@ document.addEventListener('DOMContentLoaded', function() {
           const folderContent = document.createElement('div');
           folderContent.className = 'folder-content';
 
-          // 过滤并显示书签
-          const folderBookmarks = children.filter(item => item.url);
-          for (const bookmark of folderBookmarks) {
-            const bookmarkItem = createBookmarkItem(bookmark, currentIndex++);
-            currentBookmarks.push(bookmark);
-            folderContent.appendChild(bookmarkItem);
+          // 显示所有子项（包括文件夹和书签）
+          for (const child of children) {
+            const childItem = child.url ? 
+              createBookmarkItem(child, currentIndex++) : 
+              createFolderItem(child, currentIndex++);
+            currentBookmarks.push(child);
+            folderContent.appendChild(childItem);
           }
 
           // 添加文件夹内容到 DOM
