@@ -119,4 +119,50 @@
 
 #openBookmarksButton:active {
   background-color: #174ea6;
+}
+
+.search-input-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.search-mode-toggle {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.search-mode-toggle:hover {
+  opacity: 0.8;
+}
+
+.search-mode-toggle.active {
+  opacity: 1;
+  color: #1a73e8;
+}
+
+.search-mode-toggle .folder-icon {
+  fill: currentColor;
+}
+
+/* 文件夹项样式 */
+.bookmark-item.folder {
+  background-color: #f8f9fa;
+}
+
+.bookmark-item.folder.expanded {
+  border-bottom: 2px solid #1a73e8;
+}
+
+.folder-content {
+  margin-left: 24px;
+  border-left: 2px solid #e8f0fe;
+  padding-left: 12px;
 } 
