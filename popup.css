@@ -12,13 +12,23 @@
 }
 
 .bookmark-item {
-  padding: 8px;
+  padding: 8px 12px;
   cursor: pointer;
-  border-bottom: 1px solid #eee;
+  border-left: 3px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.bookmark-item.selected {
+  background-color: #e8f0fe;
+  border-left-color: #1a73e8;
 }
 
 .bookmark-item:hover {
   background-color: #f5f5f5;
+}
+
+.bookmark-item.selected:hover {
+  background-color: #e8f0fe;
 }
 
 .bookmark-title {
@@ -32,14 +42,10 @@
   color: #666;
 }
 
-.bookmark-item.selected {
-  background-color: #e8f0fe;
-  border-left: 3px solid #1a73e8;
-}
-
 #bookmarkList {
   max-height: 400px;
   overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
 #bookmarkList::-webkit-scrollbar {

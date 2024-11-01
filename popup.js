@@ -71,9 +71,10 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // 显示书签
-  function displayBookmarks(bookmarks) {
+  function displayBookmarks(results) {
+    bookmarks = results.filter(bookmark => bookmark.url); // 只保留有URL的书签
     bookmarkList.innerHTML = '';
-    selectedIndex = -1;
+    selectedIndex = -1; // 重置选中索引
     
     bookmarks.forEach((bookmark, index) => {
       const bookmarkItem = document.createElement('div');
@@ -96,6 +97,12 @@ document.addEventListener('DOMContentLoaded', function() {
       
       bookmarkList.appendChild(bookmarkItem);
     });
+
+    // 如果有搜索结果，默认选中第一项
+    if (bookmarks.length > 0) {
+      selectedIndex = 0;
+      updateSelection();
+    }
   }
 
   // 高亮匹配的文本
@@ -116,7 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   function openBookmark(index) {
-    if (bookmarks[index]) {
+    if (bookmarks[index] && bookmarks[index].url) {
       chrome.tabs.create({ url: bookmarks[index].url });
       window.close();
     }
@@ -124,35 +131,54 @@ document.addEventListener('DOMContentLoaded', function() {
   
   function updateSelection() {
     const items = bookmarkList.getElementsByClassName('bookmark-item');
-    for (let i = 0; i < items.length; i++) {
-      items[i].classList.remove('selected');
-    }
+    
+    // 移除所有选中状态
+    Array.from(items).forEach(item => {
+      item.classList.remove('selected');
+    });
+    
+    // 添加新的选中状态
     if (selectedIndex >= 0 && items[selectedIndex]) {
       items[selectedIndex].classList.add('selected');
-      items[selectedIndex].scrollIntoView({ block: 'nearest' });
+      
+      // 确保选中项可见
+      items[selectedIndex].scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      });
     }
   }
   
-  // 监听键盘事件
+  // 处理键盘事件
   document.addEventListener('keydown', function(e) {
     const items = bookmarkList.getElementsByClassName('bookmark-item');
+    const itemCount = items.length;
     
     switch(e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
-        updateSelection();
+        if (itemCount > 0) {
+          selectedIndex = (selectedIndex + 1) % itemCount;
+          updateSelection();
+        }
         break;
         
       case 'ArrowUp':
         e.preventDefault();
-        selectedIndex = Math.max(selectedIndex - 1, 0);
-        updateSelection();
+        if (itemCount > 0) {
+          selectedIndex = selectedIndex < 0 ? itemCount - 1 : 
+                         (selectedIndex - 1 + itemCount) % itemCount;
+          updateSelection();
+        }
         break;
         
       case 'Enter':
-        if (selectedIndex >= 0) {
+        e.preventDefault();
+        if (selectedIndex >= 0 && selectedIndex < bookmarks.length) {
           openBookmark(selectedIndex);
+        } else if (bookmarks.length > 0) {
+          // 如果没有选中项但有搜索结果，打开第一个
+          openBookmark(0);
         }
         break;
         
