@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let isKeyboardNavigation = false;
   let includeFolders = false;
   let expandedFolderId = null;
+  let currentBookmarks = [];
 
   // 添加按钮点击事件
   openBookmarksButton.addEventListener('click', () => {
@@ -121,7 +122,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // 搜索书签
-  function searchBookmarks(query) {
+  async function searchBookmarks(query) {
     if (!query.trim()) {
       loadBookmarkHistory();
       return;
@@ -142,34 +143,81 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // 显示混合结果（文件夹和书签）
-  function displayMixedResults(folders, bookmarks) {
-    bookmarkList.innerHTML = '';
-    let currentIndex = 0;
+  async function displayMixedResults(folders, bookmarks) {
+    try {
+      bookmarkList.innerHTML = '';
+      currentBookmarks = [];
+      let currentIndex = 0;
 
-    // 显示文件夹
-    folders.forEach(folder => {
-      const folderItem = createFolderItem(folder, currentIndex++);
-      bookmarkList.appendChild(folderItem);
+      // 处理文件夹
+      for (const folder of folders) {
+        // 创建文件夹项
+        const folderItem = createFolderItem(folder, currentIndex++);
+        currentBookmarks.push(folder);
+        bookmarkList.appendChild(folderItem);
 
-      // 如果是展开的文件夹，显示其内容
-      if (folder.id === expandedFolderId) {
-        chrome.bookmarks.getChildren(folder.id, (children) => {
+        // 如果是展开的文件夹，获取并显示其内容
+        if (folder.id === expandedFolderId) {
+          // 获取文件夹内容
+          const children = await new Promise((resolve) => {
+            chrome.bookmarks.getChildren(folder.id, resolve);
+          });
+
+          // 创建文件夹内容容器
           const folderContent = document.createElement('div');
           folderContent.className = 'folder-content';
-          children.filter(item => item.url).forEach(bookmark => {
-            const bookmarkItem = createBookmarkItem(bookmark, currentIndex++);
-            folderContent.appendChild(bookmarkItem);
-          });
-          folderItem.after(folderContent);
-        });
-      }
-    });
 
-    // 显示书签
-    bookmarks.forEach(bookmark => {
-      const bookmarkItem = createBookmarkItem(bookmark, currentIndex++);
-      bookmarkList.appendChild(bookmarkItem);
-    });
+          // 过滤并显示书签
+          const folderBookmarks = children.filter(item => item.url);
+          for (const bookmark of folderBookmarks) {
+            const bookmarkItem = createBookmarkItem(bookmark, currentIndex++);
+            currentBookmarks.push(bookmark);
+            folderContent.appendChild(bookmarkItem);
+          }
+
+          // 添加文件夹内容到 DOM
+          if (folderContent.children.length > 0) {
+            bookmarkList.appendChild(folderContent);
+          }
+        }
+      }
+
+      // 显示其他书签
+      for (const bookmark of bookmarks) {
+        const bookmarkItem = createBookmarkItem(bookmark, currentIndex++);
+        currentBookmarks.push(bookmark);
+        bookmarkList.appendChild(bookmarkItem);
+      }
+
+      // 更新选中状态
+      if (currentBookmarks.length > 0) {
+        selectedIndex = 0;
+        updateSelection();
+      }
+    } catch (error) {
+      console.error('Error in displayMixedResults:', error);
+    }
+  }
+
+  // 切换文件夹展开状态
+  async function toggleFolder(folder) {
+    try {
+      console.log('Toggling folder:', folder.id); // 调试日志
+      expandedFolderId = expandedFolderId === folder.id ? null : folder.id;
+      
+      // 获取当前搜索词
+      const searchQuery = searchInput.value;
+      
+      // 重新搜索以更新显示
+      chrome.bookmarks.search(searchQuery, function(results) {
+        console.log('Search results:', results); // 调试日志
+        const folderResults = results.filter(item => !item.url);
+        const bookmarkResults = results.filter(item => item.url);
+        displayMixedResults(folderResults, bookmarkResults);
+      });
+    } catch (error) {
+      console.error('Error in toggleFolder:', error);
+    }
   }
 
   // 创建文件夹项
@@ -184,22 +232,61 @@ document.addEventListener('DOMContentLoaded', function() {
       <div class="bookmark-index">${index + 1}.</div>
       <div class="bookmark-content">
         <div class="bookmark-title">📁 ${folder.title}</div>
+        <div class="bookmark-meta">文件夹</div>
       </div>
     `;
 
-    folderItem.addEventListener('click', () => toggleFolder(folder));
+    folderItem.addEventListener('click', () => {
+      console.log('Folder clicked:', folder.id); // 调试日志
+      toggleFolder(folder);
+    });
+
     return folderItem;
   }
 
-  // 切换文件夹展开状态
-  async function toggleFolder(folder) {
-    if (expandedFolderId === folder.id) {
-      expandedFolderId = null;
-    } else {
-      expandedFolderId = folder.id;
-    }
-    searchBookmarks(searchInput.value); // 重新渲染列表
+  // 创建书签项
+  function createBookmarkItem(bookmark, index) {
+    const bookmarkItem = document.createElement('div');
+    bookmarkItem.className = 'bookmark-item';
+    
+    const lastClickDate = bookmark.lastClickTime ? 
+      new Date(bookmark.lastClickTime).toLocaleString() : '';
+    
+    bookmarkItem.innerHTML = `
+      <div class="bookmark-index">${index + 1}.</div>
+      <div class="bookmark-content">
+        <div class="bookmark-title">${bookmark.title}</div>
+        <div class="bookmark-url">${bookmark.url}</div>
+        <div class="bookmark-meta">
+          ${lastClickDate ? `次点击: ${lastClickDate}` : ''}
+          ${bookmark.clickCount ? `· 点击次数: ${bookmark.clickCount}` : ''}
+        </div>
+      </div>
+    `;
+    
+    bookmarkItem.addEventListener('click', () => openBookmark(bookmark));
+    return bookmarkItem;
   }
+
+  // 添加一些 CSS 样式
+  const style = document.createElement('style');
+  style.textContent = `
+    .folder-content {
+      margin-left: 20px;
+      padding-left: 10px;
+      border-left: 2px solid #e8f0fe;
+    }
+    
+    .bookmark-item.folder {
+      background-color: #f8f9fa;
+    }
+    
+    .bookmark-item.folder.expanded {
+      border-left: 3px solid #1a73e8;
+      background-color: #e8f0fe;
+    }
+  `;
+  document.head.appendChild(style);
 
   // 更新选中状态
   function updateSelection() {
@@ -214,33 +301,31 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 处理键盘事件
   document.addEventListener('keydown', function(e) {
-    // 获取当前实际显示的列表项数量
-    const items = bookmarkList.getElementsByClassName('bookmark-item');
-    const itemCount = items.length;
-    
-    if (itemCount === 0) return;
+    if (currentBookmarks.length === 0) return;
     
     switch(e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        isKeyboardNavigation = true;
-        // 使用实际的列表项数量
-        selectedIndex = (selectedIndex + 1) % itemCount;
+        selectedIndex = (selectedIndex + 1) % currentBookmarks.length;
         updateSelection();
         break;
         
       case 'ArrowUp':
         e.preventDefault();
-        isKeyboardNavigation = true;
-        selectedIndex = selectedIndex < 0 ? itemCount - 1 : 
-                       (selectedIndex - 1 + itemCount) % itemCount;
+        selectedIndex = selectedIndex < 0 ? currentBookmarks.length - 1 : 
+                       (selectedIndex - 1 + currentBookmarks.length) % currentBookmarks.length;
         updateSelection();
         break;
         
       case 'Enter':
         e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < itemCount) {
-          openBookmark(bookmarks[selectedIndex]);
+        if (selectedIndex >= 0 && selectedIndex < currentBookmarks.length) {
+          const selected = currentBookmarks[selectedIndex];
+          if (selected.url) {
+            openBookmark(selected);
+          } else {
+            toggleFolder(selected);
+          }
         }
         break;
         
