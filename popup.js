@@ -3,93 +3,89 @@ document.addEventListener('DOMContentLoaded', function() {
   const bookmarkList = document.getElementById('bookmarkList');
   let selectedIndex = -1;
   let bookmarks = [];
-  
-  // 自动聚焦到搜索框
-  searchInput.focus();
-  
-  function searchBookmarks(query) {
-    // 如果查询为空，显示所有书签
-    if (!query.trim()) {
-      chrome.bookmarks.getRecent(100, function(results) {
-        displayBookmarks(results);
-      });
-      return;
-    }
 
-    chrome.bookmarks.search(query, function(results) {
-      // 过滤和排序结果
-      const processedResults = results
-        .filter(bookmark => bookmark.url) // 只保留有URL的书签
-        .map(bookmark => ({
-          ...bookmark,
-          score: calculateRelevanceScore(bookmark, query.toLowerCase())
-        }))
-        .sort((a, b) => b.score - a.score) // 按相关性得分排序
-        .slice(0, 100); // 限制结果数量
+  // 确保搜索框获得焦点
+  function focusSearchInput() {
+    searchInput.focus();
+    searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+  }
+  
+  focusSearchInput();
+  window.addEventListener('load', () => setTimeout(focusSearchInput, 100));
+  window.addEventListener('focus', focusSearchInput);
 
-      displayBookmarks(processedResults);
-    });
+  // 加载插件的书签点击历史
+  async function loadBookmarkHistory() {
+    const { bookmarkHistory = [] } = await chrome.storage.local.get('bookmarkHistory');
+    displayBookmarks(bookmarkHistory);
   }
 
-  // 计算相关性得分
-  function calculateRelevanceScore(bookmark, query) {
-    const title = bookmark.title.toLowerCase();
-    const url = bookmark.url.toLowerCase();
-    let score = 0;
-
-    // 标题完全匹配
-    if (title === query) {
-      score += 100;
-    }
-    // 标题开头匹配
-    else if (title.startsWith(query)) {
-      score += 50;
-    }
-    // 标题包含查询词
-    else if (title.includes(query)) {
-      score += 30;
-    }
+  // 记录书签点击
+  async function recordBookmarkClick(bookmark) {
+    const { bookmarkHistory = [] } = await chrome.storage.local.get('bookmarkHistory');
     
-    // URL 相关性评分
-    if (url.includes(query)) {
-      score += 20;
+    // 查找是否已存在该书签
+    const existingIndex = bookmarkHistory.findIndex(item => item.url === bookmark.url);
+    const now = new Date().getTime();
+    
+    if (existingIndex !== -1) {
+      // 更新现有记录
+      bookmarkHistory[existingIndex] = {
+        ...bookmark,
+        lastClickTime: now,
+        clickCount: (bookmarkHistory[existingIndex].clickCount || 0) + 1
+      };
+    } else {
+      // 添加新记录
+      bookmarkHistory.unshift({
+        ...bookmark,
+        lastClickTime: now,
+        clickCount: 1
+      });
     }
 
-    // 词组匹配（支持多个关键词搜索）
-    const keywords = query.split(/\s+/);
-    if (keywords.length > 1) {
-      const matchedKeywords = keywords.filter(keyword => 
-        title.includes(keyword) || url.includes(keyword)
-      );
-      score += (matchedKeywords.length / keywords.length) * 25;
-    }
+    // 只保留最近的100条记录
+    const updatedHistory = bookmarkHistory
+      .sort((a, b) => b.lastClickTime - a.lastClickTime)
+      .slice(0, 100);
 
-    // 根据标题长度调整得分（优先显示较短的标题）
-    score = score * (1 - (title.length / 1000));
-
-    return score;
+    // 保存更新后的历史
+    await chrome.storage.local.set({ bookmarkHistory: updatedHistory });
   }
 
-  // 显示书签
+  // 统一处理书签打开操作
+  async function openBookmark(bookmark) {
+    if (!bookmark || !bookmark.url) return;
+    
+    await recordBookmarkClick(bookmark);
+    chrome.tabs.create({ url: bookmark.url });
+    window.close();
+  }
+
+  // 显示书签列表
   function displayBookmarks(results) {
-    bookmarks = results.filter(bookmark => bookmark.url); // 只保留有URL的书签
+    bookmarks = results;
     bookmarkList.innerHTML = '';
-    selectedIndex = -1; // 重置选中索引
+    selectedIndex = -1;
     
     bookmarks.forEach((bookmark, index) => {
       const bookmarkItem = document.createElement('div');
       bookmarkItem.className = 'bookmark-item';
       
-      // 高亮匹配的文本
-      const highlightedTitle = highlightText(bookmark.title, searchInput.value);
-      const highlightedUrl = highlightText(bookmark.url, searchInput.value);
+      const lastClickDate = bookmark.lastClickTime ? 
+        new Date(bookmark.lastClickTime).toLocaleString() : '';
       
       bookmarkItem.innerHTML = `
-        <div class="bookmark-title">${highlightedTitle}</div>
-        <div class="bookmark-url">${highlightedUrl}</div>
+        <div class="bookmark-title">${bookmark.title}</div>
+        <div class="bookmark-url">${bookmark.url}</div>
+        <div class="bookmark-meta">
+          上次点击: ${lastClickDate}
+          ${bookmark.clickCount ? `· 点击次数: ${bookmark.clickCount}` : ''}
+        </div>
       `;
       
-      bookmarkItem.addEventListener('click', () => openBookmark(index));
+      bookmarkItem.addEventListener('click', () => openBookmark(bookmark));
+      
       bookmarkItem.addEventListener('mouseover', () => {
         selectedIndex = index;
         updateSelection();
@@ -105,69 +101,47 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // 高亮匹配的文本
-  function highlightText(text, query) {
-    if (!query.trim()) return text;
-    
-    const keywords = query.toLowerCase().split(/\s+/);
-    let highlightedText = text;
-    
-    keywords.forEach(keyword => {
-      if (!keyword) return;
-      
-      const regex = new RegExp(`(${keyword})`, 'gi');
-      highlightedText = highlightedText.replace(regex, '<span class="highlight">$1</span>');
-    });
-    
-    return highlightedText;
-  }
-  
-  function openBookmark(index) {
-    if (bookmarks[index] && bookmarks[index].url) {
-      chrome.tabs.create({ url: bookmarks[index].url });
-      window.close();
+  // 搜索书签
+  function searchBookmarks(query) {
+    if (!query.trim()) {
+      loadBookmarkHistory();
+      return;
     }
+
+    chrome.bookmarks.search(query, function(results) {
+      displayBookmarks(results.filter(bookmark => bookmark.url));
+    });
   }
-  
+
+  // 更新选中状态
   function updateSelection() {
     const items = bookmarkList.getElementsByClassName('bookmark-item');
+    Array.from(items).forEach(item => item.classList.remove('selected'));
     
-    // 移除所有选中状态
-    Array.from(items).forEach(item => {
-      item.classList.remove('selected');
-    });
-    
-    // 添加新的选中状态
     if (selectedIndex >= 0 && items[selectedIndex]) {
       items[selectedIndex].classList.add('selected');
-      
-      // 确保选中项可见
-      items[selectedIndex].scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest'
-      });
+      items[selectedIndex].scrollIntoView({ block: 'nearest' });
     }
   }
-  
+
   // 处理键盘事件
-  document.addEventListener('keydown', function(e) {
+  document.addEventListener('keydown', async function(e) {
     const items = bookmarkList.getElementsByClassName('bookmark-item');
-    const itemCount = items.length;
     
     switch(e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        if (itemCount > 0) {
-          selectedIndex = (selectedIndex + 1) % itemCount;
+        if (items.length > 0) {
+          selectedIndex = (selectedIndex + 1) % items.length;
           updateSelection();
         }
         break;
         
       case 'ArrowUp':
         e.preventDefault();
-        if (itemCount > 0) {
-          selectedIndex = selectedIndex < 0 ? itemCount - 1 : 
-                         (selectedIndex - 1 + itemCount) % itemCount;
+        if (items.length > 0) {
+          selectedIndex = selectedIndex < 0 ? items.length - 1 : 
+                         (selectedIndex - 1 + items.length) % items.length;
           updateSelection();
         }
         break;
@@ -175,10 +149,9 @@ document.addEventListener('DOMContentLoaded', function() {
       case 'Enter':
         e.preventDefault();
         if (selectedIndex >= 0 && selectedIndex < bookmarks.length) {
-          openBookmark(selectedIndex);
+          openBookmark(bookmarks[selectedIndex]);
         } else if (bookmarks.length > 0) {
-          // 如果没有选中项但有搜索结果，打开第一个
-          openBookmark(0);
+          openBookmark(bookmarks[0]);
         }
         break;
         
@@ -187,11 +160,12 @@ document.addEventListener('DOMContentLoaded', function() {
         break;
     }
   });
-  
-  searchInput.addEventListener('input', function(e) {
+
+  // 监听搜索输入
+  searchInput.addEventListener('input', (e) => {
     searchBookmarks(e.target.value);
   });
-  
-  // 初始加载显示所有书签
-  searchBookmarks('');
+
+  // 初始加载历史记录
+  loadBookmarkHistory();
 }); 
