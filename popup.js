@@ -1,8 +1,16 @@
 document.addEventListener('DOMContentLoaded', function() {
   const searchInput = document.getElementById('searchInput');
   const bookmarkList = document.getElementById('bookmarkList');
+  const openBookmarksButton = document.getElementById('openBookmarksButton');
   let selectedIndex = -1;
   let bookmarks = [];
+  let isKeyboardNavigation = false;
+
+  // 添加按钮点击事件
+  openBookmarksButton.addEventListener('click', () => {
+    chrome.tabs.create({ url: 'chrome://bookmarks/' });
+    window.close();
+  });
 
   // 确保搜索框获得焦点
   function focusSearchInput() {
@@ -17,7 +25,8 @@ document.addEventListener('DOMContentLoaded', function() {
   // 加载插件的书签点击历史
   async function loadBookmarkHistory() {
     const { bookmarkHistory = [] } = await chrome.storage.local.get('bookmarkHistory');
-    displayBookmarks(bookmarkHistory);
+    bookmarks = bookmarkHistory;
+    displayBookmarks(bookmarks);
   }
 
   // 记录书签点击
@@ -66,7 +75,6 @@ document.addEventListener('DOMContentLoaded', function() {
   function displayBookmarks(results) {
     bookmarks = results;
     bookmarkList.innerHTML = '';
-    selectedIndex = -1;
     
     bookmarks.forEach((bookmark, index) => {
       const bookmarkItem = document.createElement('div');
@@ -76,25 +84,33 @@ document.addEventListener('DOMContentLoaded', function() {
         new Date(bookmark.lastClickTime).toLocaleString() : '';
       
       bookmarkItem.innerHTML = `
-        <div class="bookmark-title">${bookmark.title}</div>
-        <div class="bookmark-url">${bookmark.url}</div>
-        <div class="bookmark-meta">
-          上次点击: ${lastClickDate}
-          ${bookmark.clickCount ? `· 点击次数: ${bookmark.clickCount}` : ''}
+        <div class="bookmark-index">${index + 1}.</div>
+        <div class="bookmark-content">
+          <div class="bookmark-title">${bookmark.title}</div>
+          <div class="bookmark-url">${bookmark.url}</div>
+          <div class="bookmark-meta">
+            上次点击: ${lastClickDate}
+            ${bookmark.clickCount ? `· 点击次数: ${bookmark.clickCount}` : ''}
+          </div>
         </div>
       `;
       
       bookmarkItem.addEventListener('click', () => openBookmark(bookmark));
       
       bookmarkItem.addEventListener('mouseover', () => {
-        selectedIndex = index;
-        updateSelection();
+        if (!isKeyboardNavigation) {
+          selectedIndex = index;
+          updateSelection();
+        }
+      });
+
+      bookmarkItem.addEventListener('mouseout', () => {
+        isKeyboardNavigation = false;
       });
       
       bookmarkList.appendChild(bookmarkItem);
     });
 
-    // 如果有搜索结果，默认选中第一项
     if (bookmarks.length > 0) {
       selectedIndex = 0;
       updateSelection();
@@ -109,7 +125,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     chrome.bookmarks.search(query, function(results) {
-      displayBookmarks(results.filter(bookmark => bookmark.url));
+      const bookmarkResults = results.filter(bookmark => bookmark.url);
+      bookmarks = bookmarkResults;
+      displayBookmarks(bookmarks);
     });
   }
 
@@ -125,33 +143,34 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // 处理键盘事件
-  document.addEventListener('keydown', async function(e) {
+  document.addEventListener('keydown', function(e) {
+    // 获取当前实际显示的列表项数量
     const items = bookmarkList.getElementsByClassName('bookmark-item');
+    const itemCount = items.length;
+    
+    if (itemCount === 0) return;
     
     switch(e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        if (items.length > 0) {
-          selectedIndex = (selectedIndex + 1) % items.length;
-          updateSelection();
-        }
+        isKeyboardNavigation = true;
+        // 使用实际的列表项数量
+        selectedIndex = (selectedIndex + 1) % itemCount;
+        updateSelection();
         break;
         
       case 'ArrowUp':
         e.preventDefault();
-        if (items.length > 0) {
-          selectedIndex = selectedIndex < 0 ? items.length - 1 : 
-                         (selectedIndex - 1 + items.length) % items.length;
-          updateSelection();
-        }
+        isKeyboardNavigation = true;
+        selectedIndex = selectedIndex < 0 ? itemCount - 1 : 
+                       (selectedIndex - 1 + itemCount) % itemCount;
+        updateSelection();
         break;
         
       case 'Enter':
         e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < bookmarks.length) {
+        if (selectedIndex >= 0 && selectedIndex < itemCount) {
           openBookmark(bookmarks[selectedIndex]);
-        } else if (bookmarks.length > 0) {
-          openBookmark(bookmarks[0]);
         }
         break;
         
