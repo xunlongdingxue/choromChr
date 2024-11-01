@@ -124,10 +124,10 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
+    // 直接使用 chrome.bookmarks.search，不��查询词做任何处理
     chrome.bookmarks.search(query, function(results) {
       const bookmarkResults = results.filter(bookmark => bookmark.url);
-      bookmarks = bookmarkResults;
-      displayBookmarks(bookmarks);
+      displayBookmarks(bookmarkResults);
     });
   }
 
